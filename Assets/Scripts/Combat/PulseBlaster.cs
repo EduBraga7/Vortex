@@ -124,6 +124,8 @@ namespace Vortex.Combat
                     projectile.Initialize(damage, pierceCount, projectilePoolTag);
                 }
             }
+
+            SynthAudioManager.Instance?.PlayShootSFX();
         }
 
         public override void UpgradeWeapon()

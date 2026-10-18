@@ -99,6 +99,8 @@ namespace Vortex.Combat
                 }
             }
 
+            SynthAudioManager.Instance?.PlayXPPickupSFX();
+
             if (ObjectPooler.Instance != null)
             {
                 ObjectPooler.Instance.ReturnToPool(poolTag, gameObject);

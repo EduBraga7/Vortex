@@ -1,5 +1,6 @@
 using System;
 using UnityEngine;
+using Vortex.CameraSystem;
 using Vortex.Core;
 
 namespace Vortex.Player
@@ -50,6 +51,9 @@ namespace Vortex.Player
 
             _lastDamageTime = Time.time;
             _currentHP = Mathf.Max(0f, _currentHP - amount);
+
+            // Screen shake forte ao sofrer dano (Game Feel)
+            TopDownCameraFollow.Instance?.TriggerShake(0.35f, 0.7f);
 
             OnHealthChanged?.Invoke(_currentHP, maxHP);
             EventBus.RaisePlayerHealthChanged(_currentHP, maxHP);

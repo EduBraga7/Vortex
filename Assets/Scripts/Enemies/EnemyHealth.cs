@@ -1,11 +1,13 @@
+using System.Collections;
 using UnityEngine;
+using Vortex.Combat;
 using Vortex.Core;
 
 namespace Vortex.Enemies
 {
     /// <summary>
-    /// Controla a vida do inimigo, feedback visual procedural de dano (squash & stretch)
-    /// e reciclagem de volta para o ObjectPooler ao morrer.
+    /// Controla a vida do inimigo, feedback visual procedural de dano (squash & stretch, hit flash)
+    /// e reciclagem de volta para o ObjectPooler ao morrer com spawn de partículas DeathVFX.
     /// </summary>
     public class EnemyHealth : MonoBehaviour
     {
@@ -15,10 +17,16 @@ namespace Vortex.Enemies
 
         [Header("Feedback Visual")]
         [SerializeField] private float hitRecoverySpeed = 16f;
+        [SerializeField] private Color deathColor = new Color(1.0f, 0.4f, 0.1f);
 
         private float _currentHP;
         private Vector3 _baseScale;
         private bool _isDying;
+
+        private Renderer _renderer;
+        private MaterialPropertyBlock _propBlock;
+        private Coroutine _hitFlashCoroutine;
+        private static readonly int EmissionColorProp = Shader.PropertyToID("_EmissionColor");
 
         public float CurrentHP => _currentHP;
         public float MaxHP => maxHP;
@@ -27,6 +35,8 @@ namespace Vortex.Enemies
         private void Awake()
         {
             _baseScale = transform.localScale;
+            _renderer = GetComponentInChildren<Renderer>();
+            _propBlock = new MaterialPropertyBlock();
         }
 
         private void OnEnable()
@@ -37,6 +47,12 @@ namespace Vortex.Enemies
             if (_baseScale != Vector3.zero)
             {
                 transform.localScale = _baseScale;
+            }
+
+            if (_renderer != null && _propBlock != null)
+            {
+                _propBlock.Clear();
+                _renderer.SetPropertyBlock(_propBlock);
             }
         }
 
@@ -58,22 +74,66 @@ namespace Vortex.Enemies
             // Efeito procedural de squash & stretch: expande no plano XZ e achata em Y
             transform.localScale = new Vector3(_baseScale.x * 1.35f, _baseScale.y * 0.65f, _baseScale.z * 1.35f);
 
+            // Audio SFX de impacto
+            SynthAudioManager.Instance?.PlayHitSFX();
+
+            // Popup de dano flutuante no espaço 3D
+            DamagePopupManager.Instance?.ShowDamage(transform.position, amount);
+
+            // Hit Flash em branco brilhante via MaterialPropertyBlock por 0.08s
+            if (_renderer != null && gameObject.activeInHierarchy)
+            {
+                if (_hitFlashCoroutine != null) StopCoroutine(_hitFlashCoroutine);
+                _hitFlashCoroutine = StartCoroutine(HitFlashRoutine());
+            }
+
             if (_currentHP <= 0f)
             {
                 Die();
             }
         }
 
+        private IEnumerator HitFlashRoutine()
+        {
+            _renderer.GetPropertyBlock(_propBlock);
+            _propBlock.SetColor(EmissionColorProp, Color.white * 3.5f);
+            _renderer.SetPropertyBlock(_propBlock);
+
+            yield return new WaitForSeconds(0.08f);
+
+            _renderer.GetPropertyBlock(_propBlock);
+            _propBlock.Clear();
+            _renderer.SetPropertyBlock(_propBlock);
+            _hitFlashCoroutine = null;
+        }
+
         private void Die()
         {
             _isDying = true;
 
+            if (_hitFlashCoroutine != null)
+            {
+                StopCoroutine(_hitFlashCoroutine);
+                _hitFlashCoroutine = null;
+                if (_renderer != null && _propBlock != null)
+                {
+                    _propBlock.Clear();
+                    _renderer.SetPropertyBlock(_propBlock);
+                }
+            }
+
             // Notifica o sistema que um inimigo foi eliminado (contador de kills)
             EventBus.RaiseEnemyKilled();
 
-            // Spawna Cristal de Energia (XP) na posição do inimigo
+            // Spawna partículas de morte e Cristal de Energia (XP)
             if (ObjectPooler.Instance != null)
             {
+                GameObject vfx = ObjectPooler.Instance.SpawnFromPool("DeathVFX", transform.position, Quaternion.identity);
+                if (vfx != null && vfx.TryGetComponent<DeathParticleEffect>(out var deathEffect))
+                {
+                    deathEffect.Play(GetDeathColor());
+                }
+
                 ObjectPooler.Instance.SpawnFromPool("XPGem", transform.position, Quaternion.identity);
                 ObjectPooler.Instance.ReturnToPool(poolTag, gameObject);
             }
@@ -81,6 +141,14 @@ namespace Vortex.Enemies
             {
                 gameObject.SetActive(false);
             }
+        }
+
+        public Color GetDeathColor()
+        {
+            if (poolTag == "Swarmer") return new Color(1.0f, 0.45f, 0.05f) * 2.0f;
+            if (poolTag == "Bruiser") return new Color(0.9f, 0.1f, 0.85f) * 2.0f;
+            if (poolTag == "CoreBoss") return new Color(1.0f, 0.1f, 0.2f) * 2.5f;
+            return deathColor;
         }
 
         public void SetBaseScale(Vector3 scale)

@@ -3,6 +3,8 @@ using UnityEditor;
 using UnityEditor.SceneManagement;
 using UnityEngine;
 using UnityEngine.UI;
+using UnityEngine.Rendering;
+using UnityEngine.Rendering.Universal;
 #if ENABLE_INPUT_SYSTEM
 using UnityEngine.InputSystem.UI;
 #endif
@@ -343,6 +345,369 @@ namespace Vortex.EditorTools
             Debug.Log("<color=#00FF99><b>[Vortex Tools]</b></color> Sprint 4 (Full Arsenal, Waves, 3D Models & EndGame) construída com sucesso! Todos os sistemas, malhas 3D e fim de jogo prontos.");
         }
 
+        [MenuItem("Vortex Tools/5. Build Sprint 5 (Neon Polish, VFX, Audio & Scene Fix)", false, 5)]
+        public static void BuildSprint5Scene()
+        {
+            Undo.IncrementCurrentGroup();
+            Undo.SetCurrentGroupName("Build Sprint 5 Setup");
+            int undoGroup = Undo.GetCurrentGroup();
+
+            AssetDatabase.Refresh(ImportAssetOptions.ForceSynchronousImport);
+
+            // 1. Garantir que as Sprints 1 a 4 estão construídas
+            GameObject player = GameObject.FindWithTag("Player") ?? GameObject.Find("Player");
+            if (player == null || GameObject.Find("_GameplayManagers") == null)
+            {
+                BuildSprint4Scene();
+                player = GameObject.FindWithTag("Player") ?? GameObject.Find("Player");
+            }
+
+            // 2. Configurar URP Global Volume (Bloom e Vignette) e Main Camera com Background Abissal
+            SetupURPVolumeAndCamera();
+
+            // 3. Atualizar materiais com HDR Emission e corrigir Arena_Floor (BoxCollider, escala 30)
+            ApplySprint5MaterialsAndArenaFloor(player);
+
+            // 4. Criar ou atualizar Prefabs de DeathVFX e DamagePopup
+            GameObject deathVfxPrefab = CreateOrUpdateDeathVFXPrefab();
+            GameObject damagePopupPrefab = CreateOrUpdateDamagePopupPrefab();
+
+            // 5. Atualizar os Prefabs dos Inimigos, Projéteis e Cristais com materiais HDR Neon
+            GameObject swarmerPrefab = CreateOrUpdateSwarmerPrefab();
+            GameObject bruiserPrefab = CreateOrUpdateBruiserPrefab();
+            GameObject coreBossPrefab = CreateOrUpdateCoreBossPrefab();
+            GameObject projectilePrefab = CreateOrUpdateProjectilePrefab();
+            GameObject xpGemPrefab = CreateOrUpdateXPGemPrefab();
+
+            // 6. Configurar ObjectPooler com todas as pools
+            GameObject managersObj = GameObject.Find("_GameplayManagers");
+            if (managersObj == null)
+            {
+                managersObj = new GameObject("_GameplayManagers");
+                Undo.RegisterCreatedObjectUndo(managersObj, "Create _GameplayManagers");
+            }
+
+            if (!managersObj.TryGetComponent<ObjectPooler>(out var pooler))
+            {
+                pooler = Undo.AddComponent<ObjectPooler>(managersObj);
+            }
+            pooler.RegisterPoolConfig("Swarmer", swarmerPrefab, 60);
+            pooler.RegisterPoolConfig("Bruiser", bruiserPrefab, 30);
+            pooler.RegisterPoolConfig("CoreBoss", coreBossPrefab, 4);
+            pooler.RegisterPoolConfig("PulseProjectile", projectilePrefab, 60);
+            pooler.RegisterPoolConfig("XPGem", xpGemPrefab, 100);
+            pooler.RegisterPoolConfig("DeathVFX", deathVfxPrefab, 30);
+            pooler.RegisterPoolConfig("DamagePopup", damagePopupPrefab, 50);
+            EditorUtility.SetDirty(pooler);
+
+            // 7. Conectar SynthAudioManager e DamagePopupManager em _GameplayManagers
+            if (!managersObj.TryGetComponent<SynthAudioManager>(out var sam))
+            {
+                sam = Undo.AddComponent<SynthAudioManager>(managersObj);
+            }
+            EditorUtility.SetDirty(sam);
+
+            if (!managersObj.TryGetComponent<DamagePopupManager>(out var dpm))
+            {
+                dpm = Undo.AddComponent<DamagePopupManager>(managersObj);
+            }
+            EditorUtility.SetDirty(dpm);
+
+            // 8. Reposicionar Barra de Vida para baixo do Player em World Space e limpar TopHUD
+            GameObject canvasObj = GameObject.Find("HUD_Canvas");
+            SetupWorldHealthBar(player, canvasObj);
+
+            if (!EditorApplication.isPlaying)
+            {
+                EditorSceneManager.MarkSceneDirty(EditorSceneManager.GetActiveScene());
+            }
+            Undo.CollapseUndoOperations(undoGroup);
+
+            Selection.activeGameObject = managersObj;
+            Debug.Log("<color=#00FF99><b>[Vortex Tools]</b></color> Sprint 5 (Neon Polish, VFX, Audio & Scene Fix) construída com sucesso! Bloom, Vignette, Áudio Procedural, Death VFX, Hit Flash, Floating Damage e World Health Bar ativos.");
+        }
+
+        private static void SetupURPVolumeAndCamera()
+        {
+            GameObject volumeObj = GameObject.Find("Global_Volume");
+            if (volumeObj == null)
+            {
+                volumeObj = new GameObject("Global_Volume", typeof(Volume));
+                Undo.RegisterCreatedObjectUndo(volumeObj, "Create Global Volume");
+            }
+
+            Volume volume = GetOrAddComponent<Volume>(volumeObj);
+            volume.isGlobal = true;
+
+            EnsureFolderHierarchy("Assets", "Art");
+            EnsureFolderHierarchy("Assets/Art", "Profiles");
+            string profilePath = "Assets/Art/Profiles/Vortex_GlobalVolumeProfile.asset";
+
+            VolumeProfile profile = AssetDatabase.LoadAssetAtPath<VolumeProfile>(profilePath);
+            if (profile == null)
+            {
+                profile = ScriptableObject.CreateInstance<VolumeProfile>();
+                AssetDatabase.CreateAsset(profile, profilePath);
+            }
+
+            // Bloom: Threshold = 0.85, Intensity = 3.0, Scatter = 0.7
+            if (!profile.TryGet<Bloom>(out var bloom))
+            {
+                bloom = profile.Add<Bloom>(true);
+            }
+            bloom.threshold.Override(0.85f);
+            bloom.intensity.Override(3.0f);
+            bloom.scatter.Override(0.7f);
+
+            // Vignette: Intensity = 0.35, Color = Black
+            if (!profile.TryGet<Vignette>(out var vignette))
+            {
+                vignette = profile.Add<Vignette>(true);
+            }
+            vignette.intensity.Override(0.35f);
+            vignette.color.Override(Color.black);
+
+            EditorUtility.SetDirty(profile);
+            volume.sharedProfile = profile;
+            EditorUtility.SetDirty(volume);
+
+            // Main Camera
+            Camera mainCam = Camera.main ?? GameObject.FindWithTag("MainCamera")?.GetComponent<Camera>();
+            if (mainCam != null)
+            {
+                mainCam.clearFlags = CameraClearFlags.SolidColor;
+                mainCam.backgroundColor = new Color(0.012f, 0.015f, 0.024f, 1f);
+
+                var camData = mainCam.GetUniversalAdditionalCameraData();
+                if (camData != null)
+                {
+                    camData.renderPostProcessing = true;
+                    EditorUtility.SetDirty(camData);
+                }
+                EditorUtility.SetDirty(mainCam);
+            }
+        }
+
+        private static void ApplySprint5MaterialsAndArenaFloor(GameObject player)
+        {
+            Material playerMat = GetOrCreateMaterial("M_Player_Cyan", new Color(0.0f, 0.85f, 0.95f), true, 0.3f, new Color(0.0f, 2.6f, 3.2f));
+            GetOrCreateMaterial("M_Projectile_Cyan", new Color(0.1f, 0.95f, 1.0f), true, 0.3f, new Color(0.2f, 2.9f, 3.4f));
+            GetOrCreateMaterial("M_Swarmer_OrangeRed", new Color(1.0f, 0.35f, 0.05f), true, 0.3f, new Color(3.2f, 1.1f, 0.15f));
+            GetOrCreateMaterial("M_Bruiser_Magenta", new Color(0.85f, 0.1f, 0.75f), true, 0.3f, new Color(2.8f, 0.3f, 2.5f));
+            GetOrCreateMaterial("M_CoreBoss_CrimsonGold", new Color(1.0f, 0.12f, 0.18f), true, 0.3f, new Color(3.6f, 0.3f, 0.5f));
+            GetOrCreateMaterial("M_XPGem_EmeraldCyan", new Color(0.05f, 1.0f, 0.7f), true, 0.3f, new Color(0.15f, 3.2f, 2.2f));
+            Material floorMat = GetOrCreateMaterial("M_ArenaFloor_DarkSpace", new Color(0.025f, 0.03f, 0.042f), false, 0.05f);
+
+            if (player != null && player.TryGetComponent<Renderer>(out var playerRend))
+            {
+                playerRend.sharedMaterial = playerMat;
+            }
+
+            GameObject floor = GameObject.Find("Arena_Floor");
+            if (floor != null)
+            {
+                floor.transform.localScale = new Vector3(30f, 1f, 30f);
+
+                if (floor.TryGetComponent<MeshCollider>(out var meshCol))
+                {
+                    Object.DestroyImmediate(meshCol);
+                }
+
+                if (!floor.TryGetComponent<BoxCollider>(out var boxCol))
+                {
+                    boxCol = Undo.AddComponent<BoxCollider>(floor);
+                }
+                boxCol.size = new Vector3(10f, 0.2f, 10f);
+                boxCol.center = new Vector3(0f, -0.1f, 0f);
+
+                if (floor.TryGetComponent<Renderer>(out var floorRend))
+                {
+                    floorRend.sharedMaterial = floorMat;
+                }
+                EditorUtility.SetDirty(floor);
+            }
+        }
+
+        private static Material GetOrCreateVFXMaterial()
+        {
+            const string folderPath = "Assets/Art/Materials";
+            EnsureFolderHierarchy("Assets", "Art");
+            EnsureFolderHierarchy("Assets/Art", "Materials");
+            string assetPath = $"{folderPath}/M_DeathVFX_Particle.mat";
+            Material mat = AssetDatabase.LoadAssetAtPath<Material>(assetPath);
+            if (mat == null)
+            {
+                Shader shader = Shader.Find("Universal Render Pipeline/Particles/Unlit")
+                             ?? Shader.Find("Universal Render Pipeline/Unlit")
+                             ?? Shader.Find("Sprites/Default")
+                             ?? Shader.Find("Standard");
+                mat = new Material(shader) { name = "M_DeathVFX_Particle" };
+                if (mat.HasProperty("_BaseColor")) mat.SetColor("_BaseColor", Color.white);
+                if (mat.HasProperty("_Color")) mat.SetColor("_Color", Color.white);
+                mat.color = Color.white;
+                AssetDatabase.CreateAsset(mat, assetPath);
+            }
+            return mat;
+        }
+
+        private static GameObject CreateOrUpdateDeathVFXPrefab()
+        {
+            EnsureFolderHierarchy("Assets", "Prefabs");
+            string prefabPath = "Assets/Prefabs/DeathVFX.prefab";
+
+            GameObject tempVFX = new GameObject("DeathVFX");
+            ParticleSystem ps = tempVFX.AddComponent<ParticleSystem>();
+
+            var main = ps.main;
+            main.duration = 0.5f;
+            main.loop = false;
+            main.startLifetime = 0.5f;
+            main.startSpeed = 6.0f;
+            main.startSize = 0.22f;
+            main.playOnAwake = false;
+            main.stopAction = ParticleSystemStopAction.None;
+            main.scalingMode = ParticleSystemScalingMode.Local;
+
+            var emission = ps.emission;
+            emission.rateOverTime = 0f;
+            emission.burstCount = 1;
+            emission.SetBursts(new ParticleSystem.Burst[] { new ParticleSystem.Burst(0.0f, 25) });
+
+            var shape = ps.shape;
+            shape.shapeType = ParticleSystemShapeType.Sphere;
+            shape.radius = 0.25f;
+
+            var colorOverLifetime = ps.colorOverLifetime;
+            colorOverLifetime.enabled = true;
+            Gradient grad = new Gradient();
+            grad.SetKeys(
+                new GradientColorKey[] { new GradientColorKey(Color.white, 0.0f), new GradientColorKey(Color.white, 1.0f) },
+                new GradientAlphaKey[] { new GradientAlphaKey(1.0f, 0.0f), new GradientAlphaKey(0.0f, 1.0f) }
+            );
+            colorOverLifetime.color = new ParticleSystem.MinMaxGradient(grad);
+
+            var sizeOverLifetime = ps.sizeOverLifetime;
+            sizeOverLifetime.enabled = true;
+            AnimationCurve curve = new AnimationCurve();
+            curve.AddKey(0.0f, 1.0f);
+            curve.AddKey(1.0f, 0.1f);
+            sizeOverLifetime.size = new ParticleSystem.MinMaxCurve(1.0f, curve);
+
+            ParticleSystemRenderer psr = tempVFX.GetComponent<ParticleSystemRenderer>();
+            psr.sharedMaterial = GetOrCreateVFXMaterial();
+            psr.renderMode = ParticleSystemRenderMode.Billboard;
+
+            tempVFX.AddComponent<DeathParticleEffect>();
+
+            GameObject savedPrefab = PrefabUtility.SaveAsPrefabAsset(tempVFX, prefabPath);
+            Object.DestroyImmediate(tempVFX);
+            return savedPrefab;
+        }
+
+        private static GameObject CreateOrUpdateDamagePopupPrefab()
+        {
+            EnsureFolderHierarchy("Assets", "Prefabs");
+            string prefabPath = "Assets/Prefabs/DamagePopup.prefab";
+
+            GameObject tempPopup = new GameObject("DamagePopup");
+
+            Font defaultFont = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf")
+                            ?? Resources.GetBuiltinResource<Font>("Arial.ttf");
+
+            TextMesh tm = tempPopup.AddComponent<TextMesh>();
+            tm.text = "15";
+            tm.fontSize = 28;
+            tm.fontStyle = FontStyle.Bold;
+            tm.alignment = TextAlignment.Center;
+            tm.anchor = TextAnchor.MiddleCenter;
+            tm.characterSize = 0.15f;
+            if (defaultFont != null)
+            {
+                tm.font = defaultFont;
+                MeshRenderer mr = tempPopup.GetComponent<MeshRenderer>();
+                if (mr != null) mr.sharedMaterial = defaultFont.material;
+            }
+
+            tempPopup.AddComponent<DamagePopup>();
+
+            GameObject savedPrefab = PrefabUtility.SaveAsPrefabAsset(tempPopup, prefabPath);
+            Object.DestroyImmediate(tempPopup);
+            return savedPrefab;
+        }
+
+        private static void SetupWorldHealthBar(GameObject player, GameObject hudCanvas)
+        {
+            if (hudCanvas != null)
+            {
+                Transform topHudTr = hudCanvas.transform.Find("TopHUD");
+                if (topHudTr != null)
+                {
+                    Transform oldHp = topHudTr.Find("Player_HP_Background");
+                    if (oldHp != null)
+                    {
+                        Object.DestroyImmediate(oldHp.gameObject);
+                    }
+                }
+            }
+
+            GameObject worldHpObj = GameObject.Find("Player_World_HealthBar");
+            if (worldHpObj == null)
+            {
+                worldHpObj = new GameObject("Player_World_HealthBar", typeof(RectTransform), typeof(Canvas));
+                Undo.RegisterCreatedObjectUndo(worldHpObj, "Create Player_World_HealthBar");
+            }
+
+            Canvas worldCanvas = GetOrAddComponent<Canvas>(worldHpObj);
+            worldCanvas.renderMode = RenderMode.WorldSpace;
+            worldCanvas.sortingOrder = 5;
+
+            RectTransform canvasRt = GetOrAddComponent<RectTransform>(worldHpObj);
+            canvasRt.sizeDelta = new Vector2(1.2f, 0.16f);
+            canvasRt.localScale = Vector3.one;
+            worldHpObj.transform.rotation = Quaternion.Euler(60f, 0f, 0f);
+
+            GameObject bgObj = GetOrCreateUIChild(worldHpObj, "Background");
+            RectTransform bgRt = GetOrAddComponent<RectTransform>(bgObj);
+            bgRt.anchorMin = Vector2.zero;
+            bgRt.anchorMax = Vector2.one;
+            bgRt.offsetMin = Vector2.zero;
+            bgRt.offsetMax = Vector2.zero;
+            Image bgImg = GetOrAddComponent<Image>(bgObj);
+            bgImg.color = new Color(0.08f, 0.08f, 0.12f, 0.88f);
+
+            GameObject fillObj = GetOrCreateUIChild(bgObj, "Fill");
+            RectTransform fillRt = GetOrAddComponent<RectTransform>(fillObj);
+            fillRt.anchorMin = Vector2.zero;
+            fillRt.anchorMax = Vector2.one;
+            fillRt.offsetMin = new Vector2(0.02f, 0.02f);
+            fillRt.offsetMax = new Vector2(-0.02f, -0.02f);
+            Image fillImg = GetOrAddComponent<Image>(fillObj);
+            fillImg.sprite = GetOrCreateWhiteSprite();
+            fillImg.type = Image.Type.Filled;
+            fillImg.fillMethod = Image.FillMethod.Horizontal;
+            fillImg.color = new Color(0.1f, 0.95f, 0.5f, 1f);
+            fillImg.fillAmount = 1f;
+
+            PlayerWorldHealthBar follower = GetOrAddComponent<PlayerWorldHealthBar>(worldHpObj);
+            follower.Setup(player.transform, fillImg, bgImg);
+
+            if (hudCanvas != null && hudCanvas.TryGetComponent<HUDController>(out var hud))
+            {
+                Transform topHudTr = hudCanvas.transform.Find("TopHUD");
+                if (topHudTr != null)
+                {
+                    Image xpFill = topHudTr.Find("XP_Bar_Background/XP_Bar_Fill")?.GetComponent<Image>();
+                    Text lvlTxt = topHudTr.Find("Level_Text")?.GetComponent<Text>();
+                    Text tmrTxt = topHudTr.Find("Timer_Text")?.GetComponent<Text>();
+                    Text kllTxt = topHudTr.Find("Kills_Text")?.GetComponent<Text>();
+                    hud.SetupReferences(xpFill, lvlTxt, tmrTxt, kllTxt, fillImg);
+                    EditorUtility.SetDirty(hud);
+                }
+            }
+
+            EditorUtility.SetDirty(worldHpObj);
+        }
+
         private static GameObject CreateOrUpdateSwarmerPrefab()
         {
             EnsureFolderHierarchy("Assets", "Prefabs");
@@ -386,7 +751,7 @@ namespace Vortex.EditorTools
             health.SetBaseScale(new Vector3(0.8f, 0.8f, 0.8f));
             health.Configure(15f, "Swarmer");
 
-            Material mat = GetOrCreateMaterial("M_Swarmer_OrangeRed", new Color(1.0f, 0.22f, 0.05f), true);
+            Material mat = GetOrCreateMaterial("M_Swarmer_OrangeRed", new Color(1.0f, 0.35f, 0.05f), true, 0.3f, new Color(3.2f, 1.1f, 0.15f));
             if (mat != null && tempSwarmer.TryGetComponent<Renderer>(out var rend))
             {
                 rend.sharedMaterial = mat;
@@ -424,7 +789,7 @@ namespace Vortex.EditorTools
                 tempProj.AddComponent<Projectile>();
             }
 
-            Material mat = GetOrCreateMaterial("M_Projectile_Cyan", new Color(0.1f, 0.95f, 1.0f), true);
+            Material mat = GetOrCreateMaterial("M_Projectile_Cyan", new Color(0.1f, 0.95f, 1.0f), true, 0.3f, new Color(0.2f, 2.9f, 3.4f));
             if (mat != null && tempProj.TryGetComponent<Renderer>(out var rend))
             {
                 rend.sharedMaterial = mat;
@@ -469,7 +834,7 @@ namespace Vortex.EditorTools
                 tempGem.AddComponent<XPGem>();
             }
 
-            Material mat = GetOrCreateMaterial("M_XPGem_EmeraldCyan", new Color(0.0f, 1.0f, 0.65f), true);
+            Material mat = GetOrCreateMaterial("M_XPGem_EmeraldCyan", new Color(0.05f, 1.0f, 0.7f), true, 0.3f, new Color(0.15f, 3.2f, 2.2f));
             if (mat != null && tempGem.TryGetComponent<Renderer>(out var rend))
             {
                 rend.sharedMaterial = mat;
@@ -524,7 +889,7 @@ namespace Vortex.EditorTools
             health.SetBaseScale(new Vector3(1.2f, 1.2f, 1.2f));
             health.Configure(60f, "Bruiser");
 
-            Material mat = GetOrCreateMaterial("M_Bruiser_Magenta", new Color(0.85f, 0.1f, 0.75f), true);
+            Material mat = GetOrCreateMaterial("M_Bruiser_Magenta", new Color(0.85f, 0.1f, 0.75f), true, 0.3f, new Color(2.8f, 0.3f, 2.5f));
             if (mat != null && tempBruiser.TryGetComponent<Renderer>(out var rend))
             {
                 rend.sharedMaterial = mat;
@@ -579,7 +944,7 @@ namespace Vortex.EditorTools
             health.SetBaseScale(new Vector3(3.0f, 3.0f, 3.0f));
             health.Configure(800f, "CoreBoss");
 
-            Material mat = GetOrCreateMaterial("M_CoreBoss_CrimsonGold", new Color(1.0f, 0.25f, 0.05f), true);
+            Material mat = GetOrCreateMaterial("M_CoreBoss_CrimsonGold", new Color(1.0f, 0.12f, 0.18f), true, 0.3f, new Color(3.6f, 0.3f, 0.5f));
             if (mat != null && tempBoss.TryGetComponent<Renderer>(out var rend))
             {
                 rend.sharedMaterial = mat;
@@ -932,7 +1297,7 @@ namespace Vortex.EditorTools
             return Sprite.Create(tex, new Rect(0, 0, tex.width, tex.height), new Vector2(0.5f, 0.5f));
         }
 
-        private static Material GetOrCreateMaterial(string matName, Color color, bool emissive)
+        private static Material GetOrCreateMaterial(string matName, Color color, bool emissive, float smoothness = 0.4f, Color? hdrEmission = null)
         {
             const string folderPath = "Assets/Art/Materials";
             EnsureFolderHierarchy("Assets", "Art");
@@ -947,19 +1312,19 @@ namespace Vortex.EditorTools
                              ?? Shader.Find("Unlit/Color");
 
                 mat = new Material(shader) { name = matName };
-                ConfigureMaterialColors(mat, color, emissive);
+                ConfigureMaterialColors(mat, color, emissive, smoothness, hdrEmission);
                 AssetDatabase.CreateAsset(mat, assetPath);
             }
             else
             {
-                ConfigureMaterialColors(mat, color, emissive);
+                ConfigureMaterialColors(mat, color, emissive, smoothness, hdrEmission);
                 EditorUtility.SetDirty(mat);
             }
 
             return mat;
         }
 
-        private static void ConfigureMaterialColors(Material mat, Color color, bool emissive)
+        private static void ConfigureMaterialColors(Material mat, Color color, bool emissive, float smoothness = 0.4f, Color? hdrEmission = null)
         {
             if (mat.HasProperty("_BaseColor"))
             {
@@ -971,10 +1336,28 @@ namespace Vortex.EditorTools
             }
             mat.color = color;
 
+            if (mat.HasProperty("_Smoothness"))
+            {
+                mat.SetFloat("_Smoothness", smoothness);
+            }
+            if (mat.HasProperty("_Glossiness"))
+            {
+                mat.SetFloat("_Glossiness", smoothness);
+            }
+
             if (emissive && mat.HasProperty("_EmissionColor"))
             {
                 mat.EnableKeyword("_EMISSION");
-                mat.SetColor("_EmissionColor", color * 1.5f);
+                Color emissionVal = hdrEmission ?? (color * 2.8f);
+                mat.SetColor("_EmissionColor", emissionVal);
+            }
+            else
+            {
+                if (mat.HasProperty("_EmissionColor"))
+                {
+                    mat.SetColor("_EmissionColor", Color.black);
+                }
+                mat.DisableKeyword("_EMISSION");
             }
         }
 

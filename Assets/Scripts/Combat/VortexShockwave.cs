@@ -1,5 +1,7 @@
 using System.Collections;
 using UnityEngine;
+using Vortex.CameraSystem;
+using Vortex.Core;
 using Vortex.Enemies;
 
 namespace Vortex.Combat
@@ -110,6 +112,10 @@ namespace Vortex.Combat
 
         private void TriggerPulse(float pulseRadius, float pulseDamage, float force)
         {
+            // Shake leve de câmera e som de pulso sci-fi expansivo
+            TopDownCameraFollow.Instance?.TriggerShake(0.18f, 0.25f);
+            SynthAudioManager.Instance?.PlayShockwaveSFX();
+
             Vector3 center = transform.position;
             int count = Physics.OverlapSphereNonAlloc(center, pulseRadius, _hitBuffer);
 
