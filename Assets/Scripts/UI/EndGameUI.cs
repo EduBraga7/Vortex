@@ -117,6 +117,7 @@ namespace Vortex.UI
 
         private void OnRestartClicked()
         {
+            MainMenuUI.SkipMenuOnNextLoad = true;
             if (GameManager.Instance != null)
             {
                 GameManager.Instance.RestartGame();

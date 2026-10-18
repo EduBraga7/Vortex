@@ -417,6 +417,9 @@ namespace Vortex.EditorTools
             GameObject canvasObj = GameObject.Find("HUD_Canvas");
             SetupWorldHealthBar(player, canvasObj);
 
+            // 9. Configurar Starfield cósmico
+            SetupStarfieldSystem();
+
             if (!EditorApplication.isPlaying)
             {
                 EditorSceneManager.MarkSceneDirty(EditorSceneManager.GetActiveScene());
@@ -425,6 +428,86 @@ namespace Vortex.EditorTools
 
             Selection.activeGameObject = managersObj;
             Debug.Log("<color=#00FF99><b>[Vortex Tools]</b></color> Sprint 5 (Neon Polish, VFX, Audio & Scene Fix) construída com sucesso! Bloom, Vignette, Áudio Procedural, Death VFX, Hit Flash, Floating Damage e World Health Bar ativos.");
+        }
+
+        [MenuItem("Vortex Tools/6. Build Sprint 6 (Menus & Pause System)", false, 6)]
+        public static void BuildSprint6Scene()
+        {
+            Undo.IncrementCurrentGroup();
+            Undo.SetCurrentGroupName("Build Sprint 6 Setup");
+            int undoGroup = Undo.GetCurrentGroup();
+
+            AssetDatabase.Refresh(ImportAssetOptions.ForceSynchronousImport);
+
+            // 1. Garantir que as Sprints anteriores foram construídas
+            GameObject player = GameObject.FindWithTag("Player") ?? GameObject.Find("Player");
+            if (player == null || GameObject.Find("_GameplayManagers") == null)
+            {
+                BuildSprint5Scene();
+                player = GameObject.FindWithTag("Player") ?? GameObject.Find("Player");
+            }
+
+            // 2. Garantir PauseManager em _GameplayManagers
+            GameObject managersObj = GameObject.Find("_GameplayManagers");
+            if (managersObj == null)
+            {
+                managersObj = new GameObject("_GameplayManagers");
+                Undo.RegisterCreatedObjectUndo(managersObj, "Create _GameplayManagers");
+            }
+
+            PauseManager pauseManager = GetOrAddComponent<PauseManager>(managersObj);
+
+            // 3. Montar e estruturar o Menu Principal e o Menu de Pause no HUD_Canvas
+            SetupMenusAndPauseUI(pauseManager);
+
+            if (!EditorApplication.isPlaying)
+            {
+                EditorSceneManager.MarkSceneDirty(EditorSceneManager.GetActiveScene());
+            }
+            Undo.CollapseUndoOperations(undoGroup);
+
+            Selection.activeGameObject = managersObj;
+            Debug.Log("<color=#00FFFF><b>[Vortex Tools]</b></color> Sprint 6 (Menus & Pause System) construída com sucesso! Tela Inicial e Tela de Pause configuradas e conectadas.");
+        }
+
+        [MenuItem("Vortex Tools/7. Apply Sci-Fi Visual Polish (Grid, Trails, Starfield & Shards)", false, 7)]
+        public static void ApplyVisualPolish()
+        {
+            Undo.IncrementCurrentGroup();
+            Undo.SetCurrentGroupName("Apply Sci-Fi Visual Polish");
+            int undoGroup = Undo.GetCurrentGroup();
+
+            AssetDatabase.Refresh(ImportAssetOptions.ForceSynchronousImport);
+
+            GameObject player = GameObject.FindWithTag("Player") ?? GameObject.Find("Player");
+            if (player == null || GameObject.Find("_GameplayManagers") == null)
+            {
+                BuildSprint5Scene();
+                player = GameObject.FindWithTag("Player") ?? GameObject.Find("Player");
+            }
+
+            SetupURPVolumeAndCamera();
+            ApplySprint5MaterialsAndArenaFloor(player);
+            SetupStarfieldSystem();
+
+            GameObject projectilePrefab = CreateOrUpdateProjectilePrefab();
+            GameObject deathVfxPrefab = CreateOrUpdateDeathVFXPrefab();
+
+            GameObject managersObj = GameObject.Find("_GameplayManagers");
+            if (managersObj != null && managersObj.TryGetComponent<ObjectPooler>(out var pooler))
+            {
+                pooler.RegisterPoolConfig("PulseProjectile", projectilePrefab, 60);
+                pooler.RegisterPoolConfig("DeathVFX", deathVfxPrefab, 30);
+                EditorUtility.SetDirty(pooler);
+            }
+
+            if (!EditorApplication.isPlaying)
+            {
+                EditorSceneManager.MarkSceneDirty(EditorSceneManager.GetActiveScene());
+            }
+            Undo.CollapseUndoOperations(undoGroup);
+
+            Debug.Log("<color=#00FFFF><b>[Vortex Tools]</b></color> Visual Polish Sci-Fi aplicado com sucesso! Grid Holográfico, Starfield, Trail Renderers e Shards Poligonais ativos.");
         }
 
         private static void SetupURPVolumeAndCamera()
@@ -496,17 +579,31 @@ namespace Vortex.EditorTools
             GetOrCreateMaterial("M_Bruiser_Magenta", new Color(0.85f, 0.1f, 0.75f), true, 0.3f, new Color(2.8f, 0.3f, 2.5f));
             GetOrCreateMaterial("M_CoreBoss_CrimsonGold", new Color(1.0f, 0.12f, 0.18f), true, 0.3f, new Color(3.6f, 0.3f, 0.5f));
             GetOrCreateMaterial("M_XPGem_EmeraldCyan", new Color(0.05f, 1.0f, 0.7f), true, 0.3f, new Color(0.15f, 3.2f, 2.2f));
-            Material floorMat = GetOrCreateMaterial("M_ArenaFloor_DarkSpace", new Color(0.025f, 0.03f, 0.042f), false, 0.05f);
+            Material floorMat = GetOrCreateGridFloorMaterial();
 
-            if (player != null && player.TryGetComponent<Renderer>(out var playerRend))
+            if (player != null)
             {
-                playerRend.sharedMaterial = playerMat;
+                if (player.TryGetComponent<Renderer>(out var playerRend))
+                {
+                    playerRend.sharedMaterial = playerMat;
+                }
+
+                if (!player.TryGetComponent<TrailRenderer>(out var pTr))
+                {
+                    pTr = Undo.AddComponent<TrailRenderer>(player);
+                }
+                pTr.time = 0.20f;
+                pTr.startWidth = 0.35f;
+                pTr.endWidth = 0.0f;
+                pTr.sharedMaterial = playerMat;
+                pTr.minVertexDistance = 0.08f;
+                EditorUtility.SetDirty(player);
             }
 
             GameObject floor = GameObject.Find("Arena_Floor");
             if (floor != null)
             {
-                floor.transform.localScale = new Vector3(30f, 1f, 30f);
+                floor.transform.localScale = new Vector3(40f, 1f, 40f);
 
                 if (floor.TryGetComponent<MeshCollider>(out var meshCol))
                 {
@@ -526,6 +623,100 @@ namespace Vortex.EditorTools
                 }
                 EditorUtility.SetDirty(floor);
             }
+        }
+
+        private static Material GetOrCreateGridFloorMaterial()
+        {
+            const string folderPath = "Assets/Art/Materials";
+            EnsureFolderHierarchy("Assets", "Art");
+            EnsureFolderHierarchy("Assets/Art", "Materials");
+
+            string assetPath = $"{folderPath}/M_ArenaFloor_SciFiGrid.mat";
+            Material mat = AssetDatabase.LoadAssetAtPath<Material>(assetPath);
+            Shader gridShader = Shader.Find("Vortex/SciFiGridFloor") 
+                             ?? Shader.Find("Universal Render Pipeline/Lit")
+                             ?? Shader.Find("Standard");
+
+            if (mat == null)
+            {
+                mat = new Material(gridShader) { name = "M_ArenaFloor_SciFiGrid" };
+                AssetDatabase.CreateAsset(mat, assetPath);
+            }
+            else if (gridShader != null && mat.shader != gridShader)
+            {
+                mat.shader = gridShader;
+            }
+
+            if (mat.HasProperty("_BaseColor")) mat.SetColor("_BaseColor", new Color(0.012f, 0.015f, 0.024f, 1.0f));
+            if (mat.HasProperty("_MajorGridColor")) mat.SetColor("_MajorGridColor", new Color(0.0f, 0.85f, 1.0f, 1.0f));
+            if (mat.HasProperty("_MinorGridColor")) mat.SetColor("_MinorGridColor", new Color(0.0f, 0.28f, 0.42f, 1.0f));
+            if (mat.HasProperty("_MajorGridSpacing")) mat.SetFloat("_MajorGridSpacing", 5.0f);
+            if (mat.HasProperty("_MinorGridSpacing")) mat.SetFloat("_MinorGridSpacing", 1.0f);
+            if (mat.HasProperty("_LineWidth")) mat.SetFloat("_LineWidth", 0.028f);
+            if (mat.HasProperty("_VignetteRadius")) mat.SetFloat("_VignetteRadius", 42.0f);
+            if (mat.HasProperty("_VignetteSoftness")) mat.SetFloat("_VignetteSoftness", 16.0f);
+            if (mat.HasProperty("_CenterPulseFrequency")) mat.SetFloat("_CenterPulseFrequency", 1.5f);
+            if (mat.HasProperty("_CenterPulseIntensity")) mat.SetFloat("_CenterPulseIntensity", 0.12f);
+
+            EditorUtility.SetDirty(mat);
+            return mat;
+        }
+
+        private static void SetupStarfieldSystem()
+        {
+            GameObject starfieldObj = GameObject.Find("_StarfieldVolume");
+            if (starfieldObj == null)
+            {
+                starfieldObj = new GameObject("_StarfieldVolume", typeof(ParticleSystem));
+                Undo.RegisterCreatedObjectUndo(starfieldObj, "Create _StarfieldVolume");
+            }
+
+            starfieldObj.transform.position = Vector3.zero;
+            starfieldObj.transform.rotation = Quaternion.identity;
+
+            ParticleSystem ps = starfieldObj.GetComponent<ParticleSystem>();
+            var main = ps.main;
+            main.duration = 5f;
+            main.loop = true;
+            main.startLifetime = new ParticleSystem.MinMaxCurve(6f, 12f);
+            main.startSpeed = new ParticleSystem.MinMaxCurve(0.05f, 0.25f);
+            main.startSize = new ParticleSystem.MinMaxCurve(0.04f, 0.10f);
+            main.maxParticles = 350;
+            main.simulationSpace = ParticleSystemSimulationSpace.World;
+            main.scalingMode = ParticleSystemScalingMode.Hierarchy;
+            main.playOnAwake = true;
+
+            var emission = ps.emission;
+            emission.rateOverTime = 25f;
+
+            var shape = ps.shape;
+            shape.shapeType = ParticleSystemShapeType.Box;
+            shape.scale = new Vector3(60f, 8f, 60f);
+            shape.position = new Vector3(0f, 3f, 0f);
+
+            var colorOverLifetime = ps.colorOverLifetime;
+            colorOverLifetime.enabled = true;
+            Gradient grad = new Gradient();
+            grad.SetKeys(
+                new GradientColorKey[] { 
+                    new GradientColorKey(new Color(0.2f, 0.8f, 1.0f), 0.0f), 
+                    new GradientColorKey(new Color(0.8f, 0.4f, 1.0f), 0.5f),
+                    new GradientColorKey(new Color(0.1f, 0.9f, 1.0f), 1.0f) 
+                },
+                new GradientAlphaKey[] { 
+                    new GradientAlphaKey(0.0f, 0.0f), 
+                    new GradientAlphaKey(0.75f, 0.35f), 
+                    new GradientAlphaKey(0.75f, 0.65f), 
+                    new GradientAlphaKey(0.0f, 1.0f) 
+                }
+            );
+            colorOverLifetime.color = new ParticleSystem.MinMaxGradient(grad);
+
+            ParticleSystemRenderer psr = starfieldObj.GetComponent<ParticleSystemRenderer>();
+            psr.sharedMaterial = GetOrCreateVFXMaterial();
+            psr.renderMode = ParticleSystemRenderMode.Billboard;
+
+            EditorUtility.SetDirty(starfieldObj);
         }
 
         private static Material GetOrCreateVFXMaterial()
@@ -561,9 +752,9 @@ namespace Vortex.EditorTools
             var main = ps.main;
             main.duration = 0.5f;
             main.loop = false;
-            main.startLifetime = 0.5f;
+            main.startLifetime = 0.45f;
             main.startSpeed = 6.0f;
-            main.startSize = 0.22f;
+            main.startSize = 0.28f;
             main.playOnAwake = false;
             main.stopAction = ParticleSystemStopAction.None;
             main.scalingMode = ParticleSystemScalingMode.Local;
@@ -571,7 +762,7 @@ namespace Vortex.EditorTools
             var emission = ps.emission;
             emission.rateOverTime = 0f;
             emission.burstCount = 1;
-            emission.SetBursts(new ParticleSystem.Burst[] { new ParticleSystem.Burst(0.0f, 25) });
+            emission.SetBursts(new ParticleSystem.Burst[] { new ParticleSystem.Burst(0.0f, 22) });
 
             var shape = ps.shape;
             shape.shapeType = ParticleSystemShapeType.Sphere;
@@ -595,7 +786,24 @@ namespace Vortex.EditorTools
 
             ParticleSystemRenderer psr = tempVFX.GetComponent<ParticleSystemRenderer>();
             psr.sharedMaterial = GetOrCreateVFXMaterial();
-            psr.renderMode = ParticleSystemRenderMode.Billboard;
+
+            Mesh shardMesh = LoadMeshFromModel("PolygonShard");
+            if (shardMesh != null)
+            {
+                psr.renderMode = ParticleSystemRenderMode.Mesh;
+                psr.mesh = shardMesh;
+
+                var rotOverLifetime = ps.rotationOverLifetime;
+                rotOverLifetime.enabled = true;
+                rotOverLifetime.separateAxes = true;
+                rotOverLifetime.x = new ParticleSystem.MinMaxCurve(-360f * Mathf.Deg2Rad, 360f * Mathf.Deg2Rad);
+                rotOverLifetime.y = new ParticleSystem.MinMaxCurve(-360f * Mathf.Deg2Rad, 360f * Mathf.Deg2Rad);
+                rotOverLifetime.z = new ParticleSystem.MinMaxCurve(-360f * Mathf.Deg2Rad, 360f * Mathf.Deg2Rad);
+            }
+            else
+            {
+                psr.renderMode = ParticleSystemRenderMode.Billboard;
+            }
 
             tempVFX.AddComponent<DeathParticleEffect>();
 
@@ -794,6 +1002,13 @@ namespace Vortex.EditorTools
             {
                 rend.sharedMaterial = mat;
             }
+
+            TrailRenderer tr = tempProj.AddComponent<TrailRenderer>();
+            tr.time = 0.12f;
+            tr.startWidth = 0.22f;
+            tr.endWidth = 0.0f;
+            tr.sharedMaterial = mat;
+            tr.minVertexDistance = 0.05f;
 
             GameObject savedPrefab = PrefabUtility.SaveAsPrefabAsset(tempProj, prefabPath);
             Object.DestroyImmediate(tempProj);
@@ -1517,6 +1732,311 @@ namespace Vortex.EditorTools
             endGameUI.SetupReferences(panelObj, headerTxt, subTxt, timeTxt, killsTxt, restartBtn);
             panelObj.SetActive(false);
 
+            EditorUtility.SetDirty(canvasObj);
+        }
+
+        private static void SetupMenusAndPauseUI(PauseManager pauseManager)
+        {
+            Font defaultFont = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
+            if (defaultFont == null) defaultFont = Resources.GetBuiltinResource<Font>("Arial.ttf");
+
+            GameObject canvasObj = GameObject.Find("HUD_Canvas");
+            if (canvasObj == null)
+            {
+                SetupHUDAndLevelUpUI();
+                canvasObj = GameObject.Find("HUD_Canvas");
+            }
+
+            MainMenuUI mainMenuUI = GetOrAddComponent<MainMenuUI>(canvasObj);
+
+            // ==================== 1. PAINEL DE MENU PRINCIPAL (TELA INICIAL) ====================
+            Transform menuTr = canvasObj.transform.Find("MainMenu_Panel");
+            GameObject menuPanel = menuTr != null ? menuTr.gameObject : new GameObject("MainMenu_Panel", typeof(RectTransform));
+            menuPanel.transform.SetParent(canvasObj.transform, false);
+
+            RectTransform menuRt = GetOrAddComponent<RectTransform>(menuPanel);
+            menuRt.anchorMin = Vector2.zero;
+            menuRt.anchorMax = Vector2.one;
+            menuRt.offsetMin = Vector2.zero;
+            menuRt.offsetMax = Vector2.zero;
+
+            Image menuBg = GetOrAddComponent<Image>(menuPanel);
+            menuBg.color = new Color(0.02f, 0.03f, 0.06f, 0.96f);
+
+            // Título "VORTEX"
+            GameObject titleObj = GetOrCreateUIChild(menuPanel, "Title_Text");
+            RectTransform titleRt = GetOrAddComponent<RectTransform>(titleObj);
+            titleRt.anchorMin = new Vector2(0.1f, 0.64f);
+            titleRt.anchorMax = new Vector2(0.9f, 0.84f);
+            titleRt.offsetMin = Vector2.zero;
+            titleRt.offsetMax = Vector2.zero;
+            Text titleTxt = GetOrAddComponent<Text>(titleObj);
+            titleTxt.font = defaultFont;
+            titleTxt.fontSize = 62;
+            titleTxt.fontStyle = FontStyle.Bold;
+            titleTxt.alignment = TextAnchor.MiddleCenter;
+            titleTxt.text = "VORTEX";
+            titleTxt.color = new Color(0.0f, 1.0f, 0.85f); // Neon Cyan
+
+            // Subtítulo
+            GameObject subObj = GetOrCreateUIChild(menuPanel, "Subtitle_Text");
+            RectTransform subRt = GetOrAddComponent<RectTransform>(subObj);
+            subRt.anchorMin = new Vector2(0.1f, 0.56f);
+            subRt.anchorMax = new Vector2(0.9f, 0.64f);
+            subRt.offsetMin = Vector2.zero;
+            subRt.offsetMax = Vector2.zero;
+            Text subTxt = GetOrAddComponent<Text>(subObj);
+            subTxt.font = defaultFont;
+            subTxt.fontSize = 18;
+            subTxt.fontStyle = FontStyle.Normal;
+            subTxt.alignment = TextAnchor.MiddleCenter;
+            subTxt.text = "NÚCLEO MECANIZADO — PROTOCOLO DE SOBREVIVÊNCIA";
+            subTxt.color = new Color(0.75f, 0.85f, 0.95f);
+
+            // Botão "Jogar"
+            GameObject playBtnObj = GetOrCreateUIChild(menuPanel, "Play_Button");
+            RectTransform playBtnRt = GetOrAddComponent<RectTransform>(playBtnObj);
+            playBtnRt.anchorMin = new Vector2(0.36f, 0.38f);
+            playBtnRt.anchorMax = new Vector2(0.64f, 0.48f);
+            playBtnRt.offsetMin = Vector2.zero;
+            playBtnRt.offsetMax = Vector2.zero;
+
+            Image playImg = GetOrAddComponent<Image>(playBtnObj);
+            playImg.color = new Color(0.0f, 0.55f, 0.85f);
+            Button playBtn = GetOrAddComponent<Button>(playBtnObj);
+
+            ColorBlock playColors = playBtn.colors;
+            playColors.normalColor = new Color(0.0f, 0.55f, 0.85f);
+            playColors.highlightedColor = new Color(0.15f, 0.85f, 1.0f);
+            playColors.pressedColor = new Color(0.0f, 0.4f, 0.65f);
+            playBtn.colors = playColors;
+
+            GameObject playTxtObj = GetOrCreateUIChild(playBtnObj, "Text");
+            RectTransform playTxtRt = GetOrAddComponent<RectTransform>(playTxtObj);
+            playTxtRt.anchorMin = Vector2.zero;
+            playTxtRt.anchorMax = Vector2.one;
+            playTxtRt.offsetMin = Vector2.zero;
+            playTxtRt.offsetMax = Vector2.zero;
+            Text playTxt = GetOrAddComponent<Text>(playTxtObj);
+            playTxt.font = defaultFont;
+            playTxt.fontSize = 22;
+            playTxt.fontStyle = FontStyle.Bold;
+            playTxt.color = Color.white;
+            playTxt.alignment = TextAnchor.MiddleCenter;
+            playTxt.text = "JOGAR";
+
+            // Botão "Sair"
+            GameObject quitBtnObj = GetOrCreateUIChild(menuPanel, "Quit_Button");
+            RectTransform quitBtnRt = GetOrAddComponent<RectTransform>(quitBtnObj);
+            quitBtnRt.anchorMin = new Vector2(0.36f, 0.25f);
+            quitBtnRt.anchorMax = new Vector2(0.64f, 0.35f);
+            quitBtnRt.offsetMin = Vector2.zero;
+            quitBtnRt.offsetMax = Vector2.zero;
+
+            Image quitImg = GetOrAddComponent<Image>(quitBtnObj);
+            quitImg.color = new Color(0.22f, 0.25f, 0.32f);
+            Button quitBtn = GetOrAddComponent<Button>(quitBtnObj);
+
+            ColorBlock quitColors = quitBtn.colors;
+            quitColors.normalColor = new Color(0.22f, 0.25f, 0.32f);
+            quitColors.highlightedColor = new Color(0.85f, 0.2f, 0.3f);
+            quitColors.pressedColor = new Color(0.15f, 0.17f, 0.22f);
+            quitBtn.colors = quitColors;
+
+            GameObject quitTxtObj = GetOrCreateUIChild(quitBtnObj, "Text");
+            RectTransform quitTxtRt = GetOrAddComponent<RectTransform>(quitTxtObj);
+            quitTxtRt.anchorMin = Vector2.zero;
+            quitTxtRt.anchorMax = Vector2.one;
+            quitTxtRt.offsetMin = Vector2.zero;
+            quitTxtRt.offsetMax = Vector2.zero;
+            Text quitTxt = GetOrAddComponent<Text>(quitTxtObj);
+            quitTxt.font = defaultFont;
+            quitTxt.fontSize = 20;
+            quitTxt.fontStyle = FontStyle.Bold;
+            quitTxt.color = Color.white;
+            quitTxt.alignment = TextAnchor.MiddleCenter;
+            quitTxt.text = "SAIR";
+
+            // Texto de Instruções de Controles
+            GameObject infoObj = GetOrCreateUIChild(menuPanel, "Controls_Info_Text");
+            RectTransform infoRt = GetOrAddComponent<RectTransform>(infoObj);
+            infoRt.anchorMin = new Vector2(0.1f, 0.10f);
+            infoRt.anchorMax = new Vector2(0.9f, 0.18f);
+            infoRt.offsetMin = Vector2.zero;
+            infoRt.offsetMax = Vector2.zero;
+            Text infoTxt = GetOrAddComponent<Text>(infoObj);
+            infoTxt.font = defaultFont;
+            infoTxt.fontSize = 15;
+            infoTxt.alignment = TextAnchor.MiddleCenter;
+            infoTxt.color = new Color(0.55f, 0.65f, 0.75f);
+            infoTxt.text = "WASD / Setas para Mover • Arsenal Automático • ESC para Pausar";
+
+            mainMenuUI.SetupReferences(menuPanel, playBtn, quitBtn);
+            menuPanel.SetActive(true);
+
+            // ==================== 2. PAINEL DE PAUSE MENU ====================
+            Transform pauseTr = canvasObj.transform.Find("Pause_Panel");
+            GameObject pausePanel = pauseTr != null ? pauseTr.gameObject : new GameObject("Pause_Panel", typeof(RectTransform));
+            pausePanel.transform.SetParent(canvasObj.transform, false);
+
+            RectTransform pauseRt = GetOrAddComponent<RectTransform>(pausePanel);
+            pauseRt.anchorMin = Vector2.zero;
+            pauseRt.anchorMax = Vector2.one;
+            pauseRt.offsetMin = Vector2.zero;
+            pauseRt.offsetMax = Vector2.zero;
+
+            Image pauseBg = GetOrAddComponent<Image>(pausePanel);
+            pauseBg.color = new Color(0.02f, 0.03f, 0.06f, 0.88f); // Fundo escuro semi-transparente
+
+            // Modal Central do Menu de Pause
+            GameObject modalObj = GetOrCreateUIChild(pausePanel, "Pause_Modal");
+            RectTransform modalRt = GetOrAddComponent<RectTransform>(modalObj);
+            modalRt.anchorMin = new Vector2(0.32f, 0.20f);
+            modalRt.anchorMax = new Vector2(0.68f, 0.80f);
+            modalRt.offsetMin = Vector2.zero;
+            modalRt.offsetMax = Vector2.zero;
+            Image modalBg = GetOrAddComponent<Image>(modalObj);
+            modalBg.color = new Color(0.06f, 0.08f, 0.14f, 0.98f);
+
+            // Título "JOGO PAUSADO"
+            GameObject pTitleObj = GetOrCreateUIChild(modalObj, "Pause_Title_Text");
+            RectTransform pTitleRt = GetOrAddComponent<RectTransform>(pTitleObj);
+            pTitleRt.anchorMin = new Vector2(0.05f, 0.82f);
+            pTitleRt.anchorMax = new Vector2(0.95f, 0.96f);
+            pTitleRt.offsetMin = Vector2.zero;
+            pTitleRt.offsetMax = Vector2.zero;
+            Text pTitleTxt = GetOrAddComponent<Text>(pTitleObj);
+            pTitleTxt.font = defaultFont;
+            pTitleTxt.fontSize = 36;
+            pTitleTxt.fontStyle = FontStyle.Bold;
+            pTitleTxt.alignment = TextAnchor.MiddleCenter;
+            pTitleTxt.text = "JOGO PAUSADO";
+            pTitleTxt.color = new Color(0.0f, 1.0f, 0.85f);
+
+            // Subtítulo
+            GameObject pSubObj = GetOrCreateUIChild(modalObj, "Pause_Subtitle_Text");
+            RectTransform pSubRt = GetOrAddComponent<RectTransform>(pSubObj);
+            pSubRt.anchorMin = new Vector2(0.05f, 0.72f);
+            pSubRt.anchorMax = new Vector2(0.95f, 0.82f);
+            pSubRt.offsetMin = Vector2.zero;
+            pSubRt.offsetMax = Vector2.zero;
+            Text pSubTxt = GetOrAddComponent<Text>(pSubObj);
+            pSubTxt.font = defaultFont;
+            pSubTxt.fontSize = 16;
+            pSubTxt.alignment = TextAnchor.MiddleCenter;
+            pSubTxt.text = "Sistemas Temporariamente Suspensos";
+            pSubTxt.color = new Color(0.7f, 0.8f, 0.9f);
+
+            // Botão "Continuar"
+            GameObject resumeBtnObj = GetOrCreateUIChild(modalObj, "Resume_Button");
+            RectTransform resumeBtnRt = GetOrAddComponent<RectTransform>(resumeBtnObj);
+            resumeBtnRt.anchorMin = new Vector2(0.15f, 0.52f);
+            resumeBtnRt.anchorMax = new Vector2(0.85f, 0.66f);
+            resumeBtnRt.offsetMin = Vector2.zero;
+            resumeBtnRt.offsetMax = Vector2.zero;
+
+            Image resumeImg = GetOrAddComponent<Image>(resumeBtnObj);
+            resumeImg.color = new Color(0.0f, 0.55f, 0.85f);
+            Button resumeBtn = GetOrAddComponent<Button>(resumeBtnObj);
+
+            ColorBlock resumeColors = resumeBtn.colors;
+            resumeColors.normalColor = new Color(0.0f, 0.55f, 0.85f);
+            resumeColors.highlightedColor = new Color(0.15f, 0.85f, 1.0f);
+            resumeColors.pressedColor = new Color(0.0f, 0.4f, 0.65f);
+            resumeBtn.colors = resumeColors;
+
+            GameObject resumeTxtObj = GetOrCreateUIChild(resumeBtnObj, "Text");
+            RectTransform resumeTxtRt = GetOrAddComponent<RectTransform>(resumeTxtObj);
+            resumeTxtRt.anchorMin = Vector2.zero;
+            resumeTxtRt.anchorMax = Vector2.one;
+            resumeTxtRt.offsetMin = Vector2.zero;
+            resumeTxtRt.offsetMax = Vector2.zero;
+            Text resumeTxt = GetOrAddComponent<Text>(resumeTxtObj);
+            resumeTxt.font = defaultFont;
+            resumeTxt.fontSize = 20;
+            resumeTxt.fontStyle = FontStyle.Bold;
+            resumeTxt.color = Color.white;
+            resumeTxt.alignment = TextAnchor.MiddleCenter;
+            resumeTxt.text = "CONTINUAR";
+
+            // Botão "Reiniciar"
+            GameObject restartBtnObj = GetOrCreateUIChild(modalObj, "Restart_Button");
+            RectTransform restartBtnRt = GetOrAddComponent<RectTransform>(restartBtnObj);
+            restartBtnRt.anchorMin = new Vector2(0.15f, 0.34f);
+            restartBtnRt.anchorMax = new Vector2(0.85f, 0.48f);
+            restartBtnRt.offsetMin = Vector2.zero;
+            restartBtnRt.offsetMax = Vector2.zero;
+
+            Image restartImg = GetOrAddComponent<Image>(restartBtnObj);
+            restartImg.color = new Color(0.85f, 0.55f, 0.1f);
+            Button restartBtn = GetOrAddComponent<Button>(restartBtnObj);
+
+            ColorBlock restartColors = restartBtn.colors;
+            restartColors.normalColor = new Color(0.85f, 0.55f, 0.1f);
+            restartColors.highlightedColor = new Color(1.0f, 0.7f, 0.2f);
+            restartColors.pressedColor = new Color(0.65f, 0.4f, 0.05f);
+            restartBtn.colors = restartColors;
+
+            GameObject restartTxtObj = GetOrCreateUIChild(restartBtnObj, "Text");
+            RectTransform restartTxtRt = GetOrAddComponent<RectTransform>(restartTxtObj);
+            restartTxtRt.anchorMin = Vector2.zero;
+            restartTxtRt.anchorMax = Vector2.one;
+            restartTxtRt.offsetMin = Vector2.zero;
+            restartTxtRt.offsetMax = Vector2.zero;
+            Text restartTxt = GetOrAddComponent<Text>(restartTxtObj);
+            restartTxt.font = defaultFont;
+            restartTxt.fontSize = 20;
+            restartTxt.fontStyle = FontStyle.Bold;
+            restartTxt.color = Color.white;
+            restartTxt.alignment = TextAnchor.MiddleCenter;
+            restartTxt.text = "REINICIAR";
+
+            // Botão "Sair"
+            GameObject pQuitBtnObj = GetOrCreateUIChild(modalObj, "Quit_Button");
+            RectTransform pQuitBtnRt = GetOrAddComponent<RectTransform>(pQuitBtnObj);
+            pQuitBtnRt.anchorMin = new Vector2(0.15f, 0.16f);
+            pQuitBtnRt.anchorMax = new Vector2(0.85f, 0.30f);
+            pQuitBtnRt.offsetMin = Vector2.zero;
+            pQuitBtnRt.offsetMax = Vector2.zero;
+
+            Image pQuitImg = GetOrAddComponent<Image>(pQuitBtnObj);
+            pQuitImg.color = new Color(0.7f, 0.18f, 0.25f);
+            Button pQuitBtn = GetOrAddComponent<Button>(pQuitBtnObj);
+
+            ColorBlock pQuitColors = pQuitBtn.colors;
+            pQuitColors.normalColor = new Color(0.7f, 0.18f, 0.25f);
+            pQuitColors.highlightedColor = new Color(0.9f, 0.25f, 0.35f);
+            pQuitColors.pressedColor = new Color(0.5f, 0.1f, 0.18f);
+            pQuitBtn.colors = pQuitColors;
+
+            GameObject pQuitTxtObj = GetOrCreateUIChild(pQuitBtnObj, "Text");
+            RectTransform pQuitTxtRt = GetOrAddComponent<RectTransform>(pQuitTxtObj);
+            pQuitTxtRt.anchorMin = Vector2.zero;
+            pQuitTxtRt.anchorMax = Vector2.one;
+            pQuitTxtRt.offsetMin = Vector2.zero;
+            pQuitTxtRt.offsetMax = Vector2.zero;
+            Text pQuitTxt = GetOrAddComponent<Text>(pQuitTxtObj);
+            pQuitTxt.font = defaultFont;
+            pQuitTxt.fontSize = 20;
+            pQuitTxt.fontStyle = FontStyle.Bold;
+            pQuitTxt.color = Color.white;
+            pQuitTxt.alignment = TextAnchor.MiddleCenter;
+            pQuitTxt.text = "SAIR";
+
+            // Conectar referências no PauseManager
+            if (pauseManager != null)
+            {
+                pauseManager.SetupReferences(pausePanel, resumeBtn, restartBtn, pQuitBtn);
+                EditorUtility.SetDirty(pauseManager);
+            }
+
+            // O Painel de Pause inicia desativado conforme especificado
+            pausePanel.SetActive(false);
+
+            // Ordenação dos painéis: MainMenu na frente de tudo
+            menuPanel.transform.SetAsLastSibling();
+
+            EditorUtility.SetDirty(mainMenuUI);
             EditorUtility.SetDirty(canvasObj);
         }
 

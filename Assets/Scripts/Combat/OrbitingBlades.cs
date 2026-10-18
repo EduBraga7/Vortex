@@ -175,6 +175,13 @@ namespace Vortex.Combat
                     rend.sharedMaterial = _bladeMaterial;
                 }
 
+                TrailRenderer tr = blade.AddComponent<TrailRenderer>();
+                tr.time = 0.22f;
+                tr.startWidth = 0.25f;
+                tr.endWidth = 0.0f;
+                tr.sharedMaterial = _bladeMaterial;
+                tr.minVertexDistance = 0.08f;
+
                 _bladeVisuals.Add(blade);
             }
 
@@ -190,7 +197,12 @@ namespace Vortex.Combat
             {
                 if (_bladeVisuals[i] != null)
                 {
-                    _bladeVisuals[i].SetActive(active && i < bladeCount);
+                    bool shouldBeActive = active && i < bladeCount;
+                    if (!shouldBeActive && _bladeVisuals[i].TryGetComponent<TrailRenderer>(out var tr))
+                    {
+                        tr.Clear();
+                    }
+                    _bladeVisuals[i].SetActive(shouldBeActive);
                 }
             }
         }

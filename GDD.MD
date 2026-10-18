@@ -14,7 +14,9 @@
 ---
 
 ## 2. Direção de Arte e Pipeline 3D (Blender -> Unity)
-* **Estilo Visual:** Sci-Fi Minimalista / Low-Poly Geométrico.
+* **Estilo Visual:** Sci-Fi Minimalista / Low-Poly Geométrico Neon (inspirado em *Nova Drift* e *Geometry Wars*).
+* **Piso e Ambiente:** Shader URP procedural HLSL em espaço de mundo com Grid Holográfico anti-aliased (`fwidth`) e vinheta radial suave, acompanhado por um volume atmosférico de *Starfield* (poeira quântica em *World Space* para profundidade 3D imediata).
+* **Cinestesia & Game Juice:** *Trail Renderers* neon nos projéteis, no núcleo do jogador e nas lâminas orbitais; estilhaçamento 3D com rotação contínua de malhas poligonais (`PolygonShard.fbx`) ao eliminar inimigos; micro-screen shake responsivo ao dano e abate.
 * **Materiais:** Uso exclusivo de materiais URP Lit/Unlit com cores sólidas e *Emission* (brilho neon em ciano, magenta, laranja e roxo) combinado com Pós-Processamento (*Bloom*). Sem necessidade de mapeamento UV complexo ou texturas pintadas à mão.
 * **Animações:** 100% procedurais via código C# (rotação contínua, flutuação com ondas senoidais `Mathf.Sin`, efeito de *squash and stretch* ao receber dano) para eliminar a necessidade de Rigging/Weight Painting no Blender.
 * **Regras de Exportação (Blender via MCP):**

@@ -2,6 +2,7 @@ using System.Collections;
 using UnityEngine;
 using Vortex.Combat;
 using Vortex.Core;
+using Vortex.CameraSystem;
 
 namespace Vortex.Enemies
 {
@@ -124,6 +125,20 @@ namespace Vortex.Enemies
 
             // Notifica o sistema que um inimigo foi eliminado (contador de kills)
             EventBus.RaiseEnemyKilled();
+
+            // Micro screen shake responsivo de acordo com o porte do inimigo abatido
+            if (poolTag == "CoreBoss")
+            {
+                TopDownCameraFollow.Instance?.TriggerShake(0.35f, 0.55f);
+            }
+            else if (poolTag == "Bruiser")
+            {
+                TopDownCameraFollow.Instance?.TriggerShake(0.12f, 0.20f);
+            }
+            else
+            {
+                TopDownCameraFollow.Instance?.TriggerShake(0.05f, 0.08f);
+            }
 
             // Spawna partículas de morte e Cristal de Energia (XP)
             if (ObjectPooler.Instance != null)

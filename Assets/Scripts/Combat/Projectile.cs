@@ -22,6 +22,7 @@ namespace Vortex.Combat
         private bool _hasHit;
         private readonly HashSet<EnemyHealth> _damagedEnemies = new HashSet<EnemyHealth>();
         private static readonly Collider[] HitBuffer = new Collider[8];
+        private TrailRenderer _trailRenderer;
 
         public void Initialize(float damageAmount, int pierce = 0, string targetPoolTag = "PulseProjectile")
         {
@@ -33,11 +34,21 @@ namespace Vortex.Combat
             _damagedEnemies.Clear();
         }
 
+        private void Awake()
+        {
+            _trailRenderer = GetComponentInChildren<TrailRenderer>();
+        }
+
         private void OnEnable()
         {
             _timer = 0f;
             _hasHit = false;
             _damagedEnemies.Clear();
+
+            if (_trailRenderer != null)
+            {
+                _trailRenderer.Clear();
+            }
         }
 
         private void Update()
